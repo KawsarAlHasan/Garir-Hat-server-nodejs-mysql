@@ -5,6 +5,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const { autoUpdateTransaction } = require("./tasks/updateStatusTask");
 const app = express();
+const path = require("path");
 dotenv.config();
 
 const globalCorsOptions = {
@@ -21,6 +22,8 @@ app.use(cors());
 
 app.use(bodyParser.json());
 app.use(express.json());
+
+app.use("/public", express.static(path.join(__dirname, "public")));
 
 // routes
 app.use("/api/v1/user", require("./routes/userRoute"));

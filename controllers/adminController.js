@@ -26,9 +26,7 @@ const loginAdmin = async (req, res) => {
     }
     const admin = results[0];
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const isMatch = await bcrypt.compare(admin?.password, hashedPassword);
+    const isMatch = await bcrypt.compare(password, admin?.password);
 
     if (!isMatch) {
       return res.status(403).json({
@@ -58,18 +56,29 @@ const loginAdmin = async (req, res) => {
 // admin update
 const adminUpdate = async (req, res) => {
   try {
-    const adminID = req.params.id;
-    if (!adminID) {
-      return res.status(404).send({
-        success: false,
-        message: "Invalid id or provide admin id",
-      });
+    const adminID = req?.decodedadmin?.id;
+
+    const { name } = req.body;
+    const images = req.file;
+
+    const [adminProfile] = await db.query(
+      `SELECT * FROM super_admin WHERE id=?`,
+      [adminID]
+    );
+
+    let preName = adminProfile[0]?.name;
+    if (name) {
+      preName = name;
     }
 
-    const { name, password, profilePic } = req.body;
+    let proPic = adminProfile[0]?.profilePic;
+    if (images && images.path) {
+      proPic = `/public/images/${images.filename}`;
+    }
+
     const data = await db.query(
-      `UPDATE super_admin SET name=?, password=?, profilePic=? WHERE id =? `,
-      [name, password, profilePic, adminID]
+      `UPDATE super_admin SET name=?, profilePic=? WHERE id =? `,
+      [preName, proPic, adminID]
     );
     if (!data) {
       return res.status(500).send({
@@ -90,10 +99,11 @@ const adminUpdate = async (req, res) => {
   }
 };
 
+// get me admin
 const getMeAdmin = async (req, res) => {
   try {
-    const decodedadmin = req?.decodedadmin?.email;
-    const result = await db.query(`SELECT * FROM super_admin WHERE email=?`, [
+    const decodedadmin = req?.decodedadmin?.id;
+    const result = await db.query(`SELECT * FROM super_admin WHERE id=?`, [
       decodedadmin,
     ]);
 
@@ -109,8 +119,66 @@ const getMeAdmin = async (req, res) => {
   }
 };
 
+// update admin password
+const updateAdminPassword = async (req, res) => {
+  try {
+    const decodedadmin = req?.decodedadmin?.id;
+
+    const { old_password, new_password } = req.body;
+
+    if (!old_password || !new_password) {
+      return res.status(500).json({
+        success: false,
+        error: "old_password, new_password required in body",
+      });
+    }
+
+    const [data] = await db.query(
+      "SELECT password FROM super_admin WHERE id =?",
+      [decodedadmin]
+    );
+
+    const checkPassword = data[0]?.password;
+
+    const isMatch = await bcrypt.compare(old_password, checkPassword);
+
+    if (!isMatch) {
+      return res.status(403).json({
+        success: false,
+        error: "Your Old Password is not correct",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    const [result] = await db.query(
+      `UPDATE super_admin SET password=? WHERE id =?`,
+      [hashedPassword, decodedadmin]
+    );
+
+    if (!result) {
+      return res.status(403).json({
+        success: false,
+        error: "Something went wrong",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      message: "Admin password updated successfully",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: "Error in password Update Admin ",
+      error,
+    });
+  }
+};
+
 module.exports = {
   loginAdmin,
   adminUpdate,
   getMeAdmin,
+  updateAdminPassword,
 };

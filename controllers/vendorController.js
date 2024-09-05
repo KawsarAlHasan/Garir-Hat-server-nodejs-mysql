@@ -5,24 +5,26 @@ const bcrypt = require("bcrypt");
 // get all vendors
 const getAllVendors = async (req, res) => {
   try {
-    const data = await db.query("SELECT * FROM vendors");
-    if (!data) {
-      return res.status(404).send({
-        success: false,
-        message: "No vendors found",
+    const [data] = await db.query("SELECT * FROM vendors");
+    if (!data || data.length === 0) {
+      return res.status(200).send({
+        success: true,
+        message: "No Vendor found",
+        data: data,
       });
     }
+
     res.status(200).send({
       success: true,
       message: "All vendors",
-      totalVendors: data[0].length,
-      data: data[0],
+      totalVendors: data.length,
+      data: data,
     });
   } catch (error) {
     res.status(500).send({
       success: false,
       message: "Error in Get All vendors",
-      error,
+      error: error.message,
     });
   }
 };
@@ -50,9 +52,7 @@ const loginVendor = async (req, res) => {
     }
     const vendor = results[0];
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const isMatch = await bcrypt.compare(vendor?.password, hashedPassword);
+    const isMatch = await bcrypt.compare(password, vendor?.password);
 
     if (!isMatch) {
       return res.status(403).json({
@@ -82,15 +82,13 @@ const loginVendor = async (req, res) => {
 // get me vendor
 const getMeVendor = async (req, res) => {
   try {
-    const decodedvendor = req?.decodedvendor?.email;
-    const result = await db.query(`SELECT * FROM vendors WHERE email=?`, [
+    const decodedvendor = req?.decodedvendor?.id;
+    const result = await db.query(`SELECT * FROM vendors WHERE id=?`, [
       decodedvendor,
     ]);
 
-    res.status(200).json({
-      success: true,
-      vendor: result[0],
-    });
+    const vendor = result[0];
+    res.status(200).json(vendor[0]);
   } catch (error) {
     res.status(400).json({
       success: false,
@@ -109,15 +107,21 @@ const getVendorByID = async (req, res) => {
         message: "Invalid or missing vendor ID",
       });
     }
-    const data = await db.query(`SELECT * FROM vendors WHERE id=?`, [vendorID]);
+    const [data] = await db.query(`SELECT * FROM vendors WHERE id=?`, [
+      vendorID,
+    ]);
     if (!data || data.length === 0) {
-      return res.status(404).send({
+      return res.status(200).send({
         success: false,
         message: "No vendor found",
+        data,
       });
     }
-    const vendor = data[0];
-    res.status(200).send(vendor[0]);
+    res.status(200).send({
+      success: true,
+      message: "Get vendor successfully",
+      data,
+    });
   } catch (error) {
     res.status(500).send({
       success: false,
@@ -127,75 +131,65 @@ const getVendorByID = async (req, res) => {
   }
 };
 
-// // create vendor
+// create vendor
 const createVendor = async (req, res, next) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      password,
-      about,
-      companyName,
-      businessLisence,
-      status,
-      contactNumber,
-      emergencyPhoneNum,
-      nidCardFront,
-      nidCardBack,
-    } = req.body;
-
-    const profilePicture = req.file.path.replace(/\\/g, "/");
-
-    if (
-      !firstName ||
-      !lastName ||
-      !email ||
-      !password ||
-      !contactNumber ||
-      !nidCardFront
-    ) {
+    const { name, email, password, phone } = req.body;
+    if (!name || !email || !password || !phone) {
       return res.status(500).send({
         success: false,
-        message: "Please provide all fields",
+        message: "name, email, password, phone is required in body",
       });
     }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const status = "Panding";
 
-    const data = await db.query(
-      `INSERT INTO vendors (firstName, lastName, email, password,  about, companyName, businessLisence, status, contactNumber, emergencyPhoneNum, profilePicture, nidCardFront, nidCardBack  ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        firstName,
-        lastName,
-        email,
-        password,
-        about,
-        companyName,
-        businessLisence,
-        status,
-        contactNumber,
-        emergencyPhoneNum,
-        profilePicture,
-        nidCardFront,
-        nidCardBack,
-      ]
-    );
-    if (!data) {
-      return res.status(404).send({
+    // Check if email already exists
+    const [checkEmail] = await db.query(`SELECT * FROM vendors WHERE email=?`, [
+      email,
+    ]);
+
+    const checkVendor = checkEmail[0];
+
+    if (checkVendor == undefined) {
+      const data = await db.query(
+        `INSERT INTO vendors (name, email, password, phone, status ) VALUES ( ?, ?, ?, ?, ?)`,
+        [name, email, hashedPassword, phone, status]
+      );
+      if (!data) {
+        return res.status(404).send({
+          success: false,
+          message: "Error in INSERT QUERY",
+        });
+      }
+
+      const [vendorInfo] = await db.query(
+        `SELECT * FROM vendors WHERE email=?`,
+        [email]
+      );
+      const vendorResult = vendorInfo[0];
+      const token = generateVendorToken(vendorResult);
+      const { password: pwd, ...vendorWithoutPassword } = vendorResult;
+
+      res.status(200).send({
+        success: true,
+        message: "Vendor Register Successfully",
+        data: {
+          vendor: vendorWithoutPassword,
+          token,
+        },
+      });
+    } else {
+      return res.status(400).send({
         success: false,
-        message: "Error in INSERT QUERY",
+        message: "Email already registered",
       });
     }
-
-    res.status(200).send({
-      success: true,
-      message: "vendor create Successfully",
-      data,
-    });
   } catch (error) {
     res.status(500).send({
       success: false,
       message: "Error in Create vendor API",
-      error,
+      error: error.message,
     });
   }
 };
@@ -203,55 +197,220 @@ const createVendor = async (req, res, next) => {
 // update vendor
 const updateVendor = async (req, res) => {
   try {
-    const vendorID = req.params.id;
-    if (!vendorID) {
-      return res.status(404).send({
+    const vendorID = req?.decodedvendor?.id;
+
+    const { name, phone, emergencyPhone, about, companyName, businessLisence } =
+      req.body;
+
+    // Check for required fields
+    if (
+      !name ||
+      !phone ||
+      !emergencyPhone ||
+      !about ||
+      !companyName ||
+      !businessLisence
+    ) {
+      return res.status(500).send({
         success: false,
-        message: "Invalid id or provide vendor id",
+        message:
+          "name, phone, emergencyPhone, about, companyName, businessLisence is required in body",
       });
     }
-    const {
-      firstName,
-      lastName,
-      emergencyPhoneNum,
-      about,
-      companyName,
-      businessLisence,
-      profilePicture,
-    } = req.body;
+
+    const images = req.file;
+
+    const [vendorProfile] = await db.query(`SELECT * FROM vendors WHERE id=?`, [
+      vendorID,
+    ]);
+
+    let proPic = vendorProfile[0]?.profilePicture;
+    if (images && images.path) {
+      proPic = `/public/images/${images.filename}`;
+    }
+
     const data = await db.query(
-      `UPDATE vendors SET firstName=?, lastName=?, emergencyPhoneNum=?, about=?, companyName=?, businessLisence=?, profilePicture=? WHERE id =? `,
+      `UPDATE vendors SET name=?, phone=?, emergencyPhone=?, about=?, companyName=?, businessLisence=?, profilePicture=? WHERE id=?`,
       [
-        firstName,
-        lastName,
-        emergencyPhoneNum,
+        name,
+        phone,
+        emergencyPhone,
         about,
         companyName,
         businessLisence,
-        profilePicture,
+        proPic,
         vendorID,
       ]
     );
+
     if (!data) {
       return res.status(500).send({
         success: false,
-        message: "Error in update vendor ",
+        message: "Error in updating vendor",
       });
     }
+
     res.status(200).send({
       success: true,
-      message: "vendor  updated successfully",
+      message: "Vendor updated successfully",
     });
   } catch (error) {
     res.status(500).send({
       success: false,
-      message: "Error in Update vendor ",
-      error,
+      message: "Error in updating vendor",
+      error: error.message,
     });
   }
 };
 
-// // // delete vendor
+// nidUpload
+const nidUpload = async (req, res) => {
+  try {
+    const vendorID = req?.decodedvendor?.id;
+
+    const [nidCardCheck] = await db.query(`SELECT * FROM vendors WHERE id=?`, [
+      vendorID,
+    ]);
+
+    const nidCardFrontCheck = nidCardCheck[0].nidCardFront;
+
+    if (nidCardFrontCheck) {
+      return res.status(500).send({
+        success: false,
+        message: "You have already submited",
+      });
+    }
+
+    const nidCardFront = `/public/images/${req.files["nidCardFront"][0].filename}`;
+    const nidCardBack = `/public/images/${req.files["nidCardBack"][0].filename}`;
+
+    const [data] = await db.query(
+      `UPDATE vendors SET nidCardFront=?, nidCardBack=? WHERE id=?`,
+      [nidCardFront, nidCardBack, vendorID]
+    );
+
+    if (!data) {
+      return res.status(500).send({
+        success: false,
+        message: "Error in uploading nid card",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      message: "nid card updated successfully",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: "Error in uploading nid card",
+      error: error.message,
+    });
+  }
+};
+
+// update vendorID password
+const updateVendorPassword = async (req, res) => {
+  try {
+    const vendorID = req?.decodedvendor?.id;
+
+    const { old_password, new_password } = req.body;
+
+    if (!old_password || !new_password) {
+      return res.status(500).json({
+        success: false,
+        error: "old_password, new_password required in body",
+      });
+    }
+
+    const [data] = await db.query("SELECT password FROM vendors WHERE id =?", [
+      vendorID,
+    ]);
+
+    const checkPassword = data[0]?.password;
+
+    const isMatch = await bcrypt.compare(old_password, checkPassword);
+
+    if (!isMatch) {
+      return res.status(403).json({
+        success: false,
+        error: "Your Old Password is not correct",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    const [result] = await db.query(
+      `UPDATE vendors SET password=? WHERE id =?`,
+      [hashedPassword, vendorID]
+    );
+
+    if (!result) {
+      return res.status(403).json({
+        success: false,
+        error: "Something went wrong",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      message: "vendors password updated successfully",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: "Error in password Update vendors ",
+      error: error.message,
+    });
+  }
+};
+
+// status update
+const statusUpdate = async (req, res) => {
+  try {
+    const vendorID = req.params.id;
+    if (!vendorID) {
+      return res.status(404).send({
+        success: false,
+        message: "vendorID is required in params",
+      });
+    }
+
+    const { status } = req.body;
+    if (!status) {
+      return res.status(500).send({
+        success: false,
+        message: "status is required in body",
+      });
+    }
+
+    // Fixed SQL query with missing comma
+    const data = await db.query(`UPDATE vendors SET status=? WHERE id=?`, [
+      status,
+      vendorID,
+    ]);
+
+    if (!data) {
+      return res.status(500).send({
+        success: false,
+        message: "Error in status updating vendor",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      message: "Vendor status updated successfully",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: "Error in status updating vendor",
+      error: error.message,
+    });
+  }
+};
+
+// delete vendor
 const deleteVendor = async (req, res) => {
   try {
     const vendorID = req.params.id;
@@ -259,6 +418,16 @@ const deleteVendor = async (req, res) => {
       return res.status(404).send({
         success: false,
         message: "Invalid id or provide vendor  id",
+      });
+    }
+
+    const [data] = await db.query(`SELECT * FROM vendors WHERE id=?`, [
+      vendorID,
+    ]);
+    if (!data || data.length === 0) {
+      return res.status(200).send({
+        success: false,
+        message: "No vendor found",
       });
     }
 
@@ -283,5 +452,8 @@ module.exports = {
   getVendorByID,
   createVendor,
   updateVendor,
+  nidUpload,
+  updateVendorPassword,
+  statusUpdate,
   deleteVendor,
 };

@@ -1,5 +1,19 @@
 const db = require("../config/db");
 
+const getCheck = async (req, res) => {
+  try {
+    let query = `SELECT products.*, vendors.id AS supplier FROM products JOIN supplier ON products.supplier = vendors.id `;
+
+    const rows = await db.query(query);
+
+    res.send(rows);
+  } catch (error) {
+    res.send({
+      error: error.message,
+    });
+  }
+};
+
 const getAllProducts = async (req, res) => {
   try {
     let {
@@ -17,6 +31,7 @@ const getAllProducts = async (req, res) => {
       bodyType,
       transmission,
       status,
+      supplier,
       numOfSeats,
       color,
       numOfDoors,
@@ -99,6 +114,11 @@ const getAllProducts = async (req, res) => {
     if (status) {
       query += " AND status = ?";
       params.push(status);
+    }
+
+    if (supplier) {
+      query += " AND supplier = ?";
+      params.push(supplier);
     }
     if (numOfSeats) {
       query += " AND numOfSeats = ?";
@@ -215,6 +235,10 @@ const getAllProducts = async (req, res) => {
       totalQuery += " AND status = ?";
       totalParams.push(status);
     }
+    if (supplier) {
+      totalQuery += " AND supplier = ?";
+      totalParams.push(supplier);
+    }
     if (numOfSeats) {
       totalQuery += " AND numOfSeats = ?";
       totalParams.push(numOfSeats);
@@ -312,37 +336,33 @@ const createProducts = async (req, res, next) => {
     const {
       name,
       price,
-      quantity,
-      category,
-      subcategory,
-      city,
-      area,
-      condition,
-      brand,
-      model,
-      yearOfManufacture,
-      kmRun,
-      engineCapacity,
-      bodyType,
-      transmission,
-      description,
-      status,
-      supplier,
-      numOfSeats,
-      color,
-      numOfDoors,
-      vehicleHistory,
-      fuelType,
-      cabinSize,
-      make,
-      bodyStyle,
-      drivetrain,
-      vehicleFutureList,
+      // quantity,
+      // category,
+      // subcategory,
+      // city,
+      // area,
+      // condition,
+      // brand,
+      // model,
+      // yearOfManufacture,
+      // kmRun,
+      // engineCapacity,
+      // bodyType,
+      // transmission,
+      // description,
+      // status,
+      // supplier,
+      // numOfSeats,
+      // color,
+      // numOfDoors,
+      // vehicleHistory,
+      // fuelType,
+      // cabinSize,
+      // make,
+      // bodyStyle,
+      // drivetrain,
+      // vehicleFutureList,
     } = req.body;
-
-    const productImages = req.files["productImages"]
-      ? req.files["productImages"].map((file) => file.path)
-      : [];
 
     if (!name || !price) {
       return res.status(500).send({
@@ -351,80 +371,61 @@ const createProducts = async (req, res, next) => {
       });
     }
 
-    const images = req.files["images"]
-      ? req.files["images"].map((file) => file.path)
-      : [];
-
-    const data = await db.query(
+    const [data] = await db.query(
       `INSERT INTO products (
           name,
-          price,
-          quantity,
-          category,
-          subcategory,
-          images,
-          city,
-          area,
-          \`condition\`,
-          brand,
-          model,
-          yearOfManufacture,
-          kmRun,
-          engineCapacity,
-          bodyType,
-          transmission,
-          description,
-          status,
-          supplier,
-          numOfSeats,
-          color,
-          numOfDoors,
-          vehicleHistory,
-          fuelType,
-          cabinSize,
-          make,
-          bodyStyle,
-          drivetrain,
-          vehicleFutureList
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          price
+        ) VALUES (?, ?)`,
       [
         name,
         price,
-        quantity,
-        category,
-        subcategory,
-        images,
-        city,
-        area,
-        condition,
-        brand,
-        model,
-        yearOfManufacture,
-        kmRun,
-        engineCapacity,
-        bodyType,
-        transmission,
-        description,
-        status,
-        supplier,
-        numOfSeats,
-        color,
-        numOfDoors,
-        vehicleHistory,
-        fuelType,
-        cabinSize,
-        make,
-        bodyStyle,
-        drivetrain,
-        vehicleFutureList,
+        // quantity,
+        // category,
+        // subcategory,
+        // city,
+        // area,
+        // condition,
+        // brand,
+        // model,
+        // yearOfManufacture,
+        // kmRun,
+        // engineCapacity,
+        // bodyType,
+        // transmission,
+        // description,
+        // status,
+        // supplier,
+        // numOfSeats,
+        // color,
+        // numOfDoors,
+        // vehicleHistory,
+        // fuelType,
+        // cabinSize,
+        // make,
+        // bodyStyle,
+        // drivetrain,
+        // vehicleFutureList,
       ]
     );
 
-    if (!data) {
+    if (data.length == 0) {
       return res.status(404).send({
         success: false,
         message: "Error in INSERT QUERY",
       });
+    }
+
+    const productId = data.insertId;
+
+    const files = req.files;
+
+    for (const file of files) {
+      console.log(productId, file.path);
+      console.log(files);
+      // await connection.query(cl
+      //   "INSERT INTO product_images (product_id, image_path) VALUES (?, ?)",
+      //   [productId, file.path]
+      // );
     }
 
     res.status(200).send({
@@ -437,6 +438,46 @@ const createProducts = async (req, res, next) => {
       success: false,
       message: "Error in Create Products API",
       error: error.message,
+    });
+  }
+};
+
+// update updateImagesProducts
+const updateImagesProducts = async (req, res) => {
+  try {
+    const productID = req.params.id;
+    if (!productID) {
+      return res.status(404).send({
+        success: false,
+        message: "Invalid id or provide product id",
+      });
+    }
+    const images = req.files ? req.files.map((file) => file.path) : [];
+    if (!images) {
+      return res.status(500).send({
+        success: false,
+        message: "Please provide valid images",
+      });
+    }
+    const data = await db.query(`UPDATE products SET images=? WHERE id =? `, [
+      JSON.stringify(images),
+      productID,
+    ]);
+    if (!data) {
+      return res.status(500).send({
+        success: false,
+        message: "Error in images update product ",
+      });
+    }
+    res.status(200).send({
+      success: true,
+      message: "product images updated successfully",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: "Error in images Update product ",
+      error,
     });
   }
 };
@@ -501,9 +542,11 @@ const deleteProducts = async (req, res) => {
 };
 
 module.exports = {
+  getCheck,
   getAllProducts,
   getProductByID,
   createProducts,
+  updateImagesProducts,
   updateProducts,
   deleteProducts,
 };
