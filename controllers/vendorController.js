@@ -440,7 +440,7 @@ const deleteVendor = async (req, res) => {
     res.status(500).send({
       success: false,
       message: "Error in Delete vendor",
-      error,
+      error: error.message,
     });
   }
 };

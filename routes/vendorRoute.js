@@ -39,7 +39,7 @@ router.put(
 );
 
 router.put("/password-change", varifyVendorToken, updateVendorPassword);
-router.put("/status/:id", varifyAdminToken, statusUpdate); // delete Vendor
+router.put("/status/:id", varifyAdminToken, statusUpdate); // status update
 router.delete("/delete/:id", varifyAdminToken, deleteVendor); // delete Vendor
 
 module.exports = router;
